@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any
 
 # Base URL for your FastAPI server
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8000/api/v1"
 
 def test_endpoint(method: str, endpoint: str, expected_status: int = 200, data: Dict = None) -> Dict[Any, Any]:
     """
@@ -69,38 +69,57 @@ def run_all_tests():
     """
     Run all tests for the FastAPI application
     """
-    print("🚀 Starting FastAPI Tests")
+    print("🚀 Starting Bookly API Tests")
     print("=" * 50)
     
     # Check if server is running
-    if not test_server_health():
+    try:
+        response = requests.get("http://localhost:8000/docs")
+        if response.status_code == 200:
+            print("✅ Server is running!")
+        else:
+            print("❌ Server is not responding correctly")
+            return
+    except:
+        print("❌ Server is not running!")
+        print("   Start it with: uvicorn main:app --reload")
         return
     
-    print("\n📋 Testing Endpoints:")
+    print("\n📋 Testing Book API Endpoints:")
     print("-" * 30)
     
-    # Test root endpoint
-    test_endpoint("GET", "/")
+    # Test get all books
+    test_endpoint("GET", "/books")
     
-    # Test greet endpoint with different names and ages (query parameter)
-    test_endpoint("GET", "/greet/Alice?age=25")
-    test_endpoint("GET", "/greet/Bob?age=30")
-    test_endpoint("GET", "/greet/FastAPI?age=5")
+    # Test get specific book
+    test_endpoint("GET", "/books/1")
+    test_endpoint("GET", "/books/999", expected_status=404)  # Non-existent book
     
-    # Test with special characters
-    test_endpoint("GET", "/greet/John%20Doe?age=35")  # URL encoded space
+    # Test create book
+    new_book = {
+        "title": "Test Book",
+        "author": "Test Author",
+        "publisher": "Test Publisher",
+        "published_date": "2024-01-01",
+        "pagecount": 100,
+        "language": "English"
+    }
+    test_endpoint("POST", "/books", data=new_book, expected_status=201)
     
-    # Test missing age parameter (should return 422)
-    test_endpoint("GET", "/greet/Alice", expected_status=422)
+    # Test update book
+    update_data = {
+        "title": "Updated Test Book",
+        "pagecount": 150
+    }
+    test_endpoint("PUT", "/books/1", data=update_data)
     
-    # Test invalid endpoint (should return 404)
-    test_endpoint("GET", "/invalid", expected_status=404)
+    # Test delete book
+    test_endpoint("DELETE", "/books/6")  # Delete the newly created book
     
     print("\n" + "=" * 50)
     print("✨ Tests completed!")
-    print("\n📖 To view API documentation:")
-    print(f"   Interactive docs: {BASE_URL}/docs")
-    print(f"   ReDoc: {BASE_URL}/redoc")
+    print(f"\n📖 API Documentation: http://localhost:8000/docs")
+    print(f"📖 Alternative docs: http://localhost:8000/redoc")
 
 if __name__ == "__main__":
     run_all_tests()
