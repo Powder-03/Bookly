@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+from typing import List
 
 class Settings(BaseSettings):
     DATABASE_URL: str = Field(..., env="DATABASE_URL")
