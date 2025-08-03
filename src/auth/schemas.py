@@ -22,3 +22,8 @@ class UserModel(BaseModel):
     password_hash: str = Field(exclude=True)  # Exclude from serialization
     created_at: datetime
     updated_at: datetime
+    
+    
+class UserLoginModel(BaseModel):
+    email: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=6, max_length=100)

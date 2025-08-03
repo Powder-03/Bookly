@@ -4,6 +4,9 @@ from typing import List
 
 class Settings(BaseSettings):
     DATABASE_URL: str = Field(..., env="DATABASE_URL")
+    JWT_SECRET: str = Field(..., env="JWT_SECRET")
+    JWT_ALGORITHM: str = Field(..., env="JWT_ALGORITHM")
+    
 
     model_config = SettingsConfigDict(
         env_file=".env",  # Specify the .env file to load environment variables from
