@@ -17,6 +17,7 @@ class User(SQLModel, table=True):
     email: str
     first_name: str
     last_name: str
+    role: str = Field(sa_column=Column(pg.VARCHAR(50), nullable=False, default='user'))  # Default role is 'user'
     is_verified: bool = False
     password_hash: str = Field(exclude=True)  # Exclude from serialization
     created_at: datetime = Field(sa_column=Column(pg.TIMESTAMP(timezone=True), nullable=False), default_factory=datetime.now)  # its an sqlalchemy column not a pydantic column

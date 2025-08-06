@@ -8,3 +8,4 @@ sqlmodel
 alembic
 passlib
 pyjwt
+aioredis
