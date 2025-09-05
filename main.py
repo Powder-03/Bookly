@@ -1,36 +1,8 @@
-from fastapi import FastAPI , Header
+from src import app
 
-app = FastAPI()
+# This is the entry point for your FastAPI application
+# The actual app is defined in src/__init__.py
 
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
-
-
-@app.get('/greet/{name}')
-async def greet(name: str , age:int) -> dict: #example of path parameter and query parameter
-    
-    return {"Hello": name, "Age": age}
-
-class BookCreateModel:
-    title: str
-    author: str
-    
-
-@app.post("/create_book")
-async def create_book(book_data: BookCreateModel) :
-    return {
-        "title": book_data.title,
-        "author": book_data.author
-    }
-    
-@app.get("/get_headers")
-async def get_headers(
-    accept: str = Header(None),
-    content_type: str = Header(None),
-):
-    request_headers = {}
-
-    request_headers['Accept'] = accept
-    
-    return request_headers
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

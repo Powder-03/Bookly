@@ -1,2 +1,11 @@
 fastapi
-uvicorn
+uvicorn[standard]
+pydantic
+python-multipart
+asyncpg
+pydantic-settings
+sqlmodel
+alembic
+passlib
+pyjwt
+aioredis
