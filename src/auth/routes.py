@@ -1,149 +1,255 @@
-from fastapi import APIRouter, status, HTTPException, Depends
-from .schemas import UserCreateModel, UserModel, UserLoginModel
-from .service import UserService
-from src.db.main import get_session
-from .utils import create_access_token, decode_token, verify_password
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, status, BackgroundTasks
+from fastapi.exceptions import HTTPException
+from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
-from datetime import timedelta , datetime
-from fastapi.responses import JSONResponse     
-from src.auth.dependencies import AccessTokenBearer , get_current_user , RoleChecker
-import logging
-from .dependencies import RefreshTokenBearer
+
+from src.db.main import get_session
 from src.db.redis import add_jti_to_blocklist
+
+from .dependencies import (
+    AccessTokenBearer,
+    RefreshTokenBearer,
+    RoleChecker,
+    get_current_user,
+)
+from .schemas import (
+    UserBooksModel,
+    UserCreateModel,
+    UserLoginModel,
+    EmailModel,
+    PasswordResetRequestModel,
+    PasswordResetConfirmModel,
+)
+from .service import UserService
+from .utils import (
+    create_access_token,
+    verify_password,
+    generate_passwd_hash,
+    create_url_safe_token,
+    decode_url_safe_token,
+)
+from src.errors import UserAlreadyExists, UserNotFound, InvalidCredentials, InvalidToken
+from src.config import Config
+from src.celery_tasks import send_email
 
 auth_router = APIRouter()
 user_service = UserService()
-role_checker = RoleChecker(allowed_roles=['admin']) # This allows only admin users to access certain endpoints
-# You can modify the allowed roles as per your requirements
+role_checker = RoleChecker(["admin", "user"])
+
 
 REFRESH_TOKEN_EXPIRY = 2
-access_token_bearer = AccessTokenBearer()
 
 
-@auth_router.post('/signup', response_model=UserModel, status_code=status.HTTP_201_CREATED)
-async def create_user_account(user_data: UserCreateModel, session: AsyncSession = Depends(get_session)):
-    try:
-        user_exists = await user_service.user_exists_by_email(user_data.email, session)
-        if user_exists:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, 
-                detail="User with this email already exists"
-            )
-        
-        new_user = await user_service.create_user(user_data, session)
-        return new_user
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception("Error creating user account")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user account"
-        )
+# Bearer Token
 
 
-@auth_router.post('/login')
-async def login_users(login_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
-    try:
-        email = login_data.email
-        password = login_data.password
-        
-        user = await user_service.get_user_by_email(email, session)
-        
+@auth_router.post("/send_mail")
+async def send_mail(emails: EmailModel):
+    emails = emails.addresses
+
+    html = "<h1>Welcome to the app</h1>"
+    subject = "Welcome to our app"
+
+    send_email.delay(emails, subject, html)
+
+    return {"message": "Email sent successfully"}
+
+
+@auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
+async def create_user_Account(
+    user_data: UserCreateModel,
+    bg_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Create user account using email, username, first_name, last_name
+    params:
+        user_data: UserCreateModel
+    """
+    email = user_data.email
+
+    user_exists = await user_service.user_exists(email, session)
+
+    if user_exists:
+        raise UserAlreadyExists()
+
+    new_user = await user_service.create_user(user_data, session)
+
+    token = create_url_safe_token({"email": email})
+
+    link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
+
+    html = f"""
+    <h1>Verify your Email</h1>
+    <p>Please click this <a href="{link}">link</a> to verify your email</p>
+    """
+
+    emails = [email]
+
+    subject = "Verify Your email"
+
+    send_email.delay(emails, subject, html)
+
+    return {
+        "message": "Account Created! Check email to verify your account",
+        "user": new_user,
+    }
+
+
+@auth_router.get("/verify/{token}")
+async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
+
+    token_data = decode_url_safe_token(token)
+
+    user_email = token_data.get("email")
+
+    if user_email:
+        user = await user_service.get_user_by_email(user_email, session)
+
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        password_valid = verify_password(password, user.password_hash)
-        if not password_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        # Create tokens with consistent data
-        user_data = {
-            'email': user.email,
-            'user_uid': str(user.uid),
-            'role': user.role  # Include role in user data for token generation
-        }
-        
-        access_token = create_access_token(user_data=user_data)
-        
-        refresh_token = create_access_token(
-            user_data=user_data,
-            refresh=True,
-            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-        )
-        
+            raise UserNotFound()
+
+        await user_service.update_user(user, {"is_verified": True}, session)
+
         return JSONResponse(
-            content={
-                "message": "Login successful",
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "user": {
-                    "email": user.email,
-                    "uid": str(user.uid)
-                }
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception("Error during login")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Login failed"
+            content={"message": "Account verified successfully"},
+            status_code=status.HTTP_200_OK,
         )
 
-
-@auth_router.get('/refresh_token')
-async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):
-    expiry_timestamp = token_details['exp']
-    
-    if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
-        new_access_token = create_access_token(
-            user_data=token_details['user'],
-        )
-        
-        return JSONResponse(
-            content={
-                "access_token": new_access_token
-            }
-        )
-        
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Refresh token has expired"
+    return JSONResponse(
+        content={"message": "Error occured during verification"},
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
-# This endpoint generates a new access token if the refresh token is valid and not expired.
-# It uses the RefreshTokenBearer dependency to validate the token and extract user data.
-# If the refresh token is valid, it creates a new access token and returns it in the response.
-# If the refresh token is expired, it raises an HTTPException with a 401 status code.
-# The new access token is created with the same user data as the original token, ensuring
-# that the user's identity remains consistent across tokens.
-# The endpoint returns a JSON response containing the new access token and a success message.
-# If the refresh token is expired, it raises an HTTPException with a 401 status code
-# and a message indicating that the refresh token has expired.
 
-@auth_router.get('/me')
-async def get_current_user(user = Depends(get_current_user) , _:bool = Depends(role_checker)):
+
+@auth_router.post("/login")
+async def login_users(
+    login_data: UserLoginModel, session: AsyncSession = Depends(get_session)
+):
+    email = login_data.email
+    password = login_data.password
+
+    user = await user_service.get_user_by_email(email, session)
+
+    if user is not None:
+        password_valid = verify_password(password, user.password_hash)
+
+        if password_valid:
+            access_token = create_access_token(
+                user_data={
+                    "email": user.email,
+                    "user_uid": str(user.uid),
+                    "role": user.role,
+                }
+            )
+
+            refresh_token = create_access_token(
+                user_data={"email": user.email, "user_uid": str(user.uid)},
+                refresh=True,
+                expiry=timedelta(days=REFRESH_TOKEN_EXPIRY),
+            )
+
+            return JSONResponse(
+                content={
+                    "message": "Login successful",
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "user": {"email": user.email, "uid": str(user.uid)},
+                }
+            )
+
+    raise InvalidCredentials()
+
+
+@auth_router.get("/refresh_token")
+async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
+    expiry_timestamp = token_details["exp"]
+
+    if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
+        new_access_token = create_access_token(user_data=token_details["user"])
+
+        return JSONResponse(content={"access_token": new_access_token})
+
+    raise InvalidToken
+
+
+@auth_router.get("/me", response_model=UserBooksModel)
+async def get_current_user(
+    user=Depends(get_current_user), _: bool = Depends(role_checker)
+):
     return user
 
-@auth_router.get('/logout')
-async def revoke_token(token_details:dict = Depends(AccessTokenBearer())):
-    
-    jti = token_details['jti']
-    
+
+@auth_router.get("/logout")
+async def revoke_token(token_details: dict = Depends(AccessTokenBearer())):
+    jti = token_details["jti"]
+
     await add_jti_to_blocklist(jti)
-    
+
+    return JSONResponse(
+        content={"message": "Logged Out Successfully"}, status_code=status.HTTP_200_OK
+    )
+
+
+
+@auth_router.post("/password-reset-request")
+async def password_reset_request(email_data: PasswordResetRequestModel):
+    email = email_data.email
+
+    token = create_url_safe_token({"email": email})
+
+    link = f"http://{Config.DOMAIN}/api/v1/auth/password-reset-confirm/{token}"
+
+    html_message = f"""
+    <h1>Reset Your Password</h1>
+    <p>Please click this <a href="{link}">link</a> to Reset Your Password</p>
+    """
+    subject = "Reset Your Password"
+
+    send_email.delay([email], subject, html_message)
     return JSONResponse(
         content={
-            "message": "Logged out successfully"
+            "message": "Please check your email for instructions to reset your password",
         },
-        status_code=status.HTTP_200_OK
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@auth_router.post("/password-reset-confirm/{token}")
+async def reset_account_password(
+    token: str,
+    passwords: PasswordResetConfirmModel,
+    session: AsyncSession = Depends(get_session),
+):
+    new_password = passwords.new_password
+    confirm_password = passwords.confirm_new_password
+
+    if new_password != confirm_password:
+        raise HTTPException(
+            detail="Passwords do not match", status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    token_data = decode_url_safe_token(token)
+
+    user_email = token_data.get("email")
+
+    if user_email:
+        user = await user_service.get_user_by_email(user_email, session)
+
+        if not user:
+            raise UserNotFound()
+
+        passwd_hash = generate_passwd_hash(new_password)
+        await user_service.update_user(user, {"password_hash": passwd_hash}, session)
+
+        return JSONResponse(
+            content={"message": "Password reset Successfully"},
+            status_code=status.HTTP_200_OK,
+        )
+
+    return JSONResponse(
+        content={"message": "Error occured during password reset."},
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )

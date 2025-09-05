@@ -1,23 +1,12 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime, date
 import uuid
+from datetime import date, datetime
+from typing import List
 
-class BookCreateModel(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    author: str = Field(..., min_length=1, max_length=100)
-    publisher: str = Field(..., min_length=1, max_length=100)
-    published_date: date = Field(..., description="Date in YYYY-MM-DD format")
-    page_count: int = Field(..., gt=0, description="Number of pages must be positive")
-    language: str = Field(..., min_length=1, max_length=50)
+from pydantic import BaseModel
 
-class BookUpdateModel(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    author: Optional[str] = Field(None, min_length=1, max_length=100)
-    publisher: Optional[str] = Field(None, min_length=1, max_length=100)
-    published_date: Optional[date] = Field(None, description="Date in YYYY-MM-DD format")
-    page_count: Optional[int] = Field(None, gt=0, description="Number of pages must be positive")
-    language: Optional[str] = Field(None, min_length=1, max_length=50)
+from src.reviews.schemas import ReviewModel
+from src.tags.schemas import TagModel
+
 
 class Book(BaseModel):
     uid: uuid.UUID
@@ -28,4 +17,26 @@ class Book(BaseModel):
     page_count: int
     language: str
     created_at: datetime
-    updated_at: datetime
+    update_at: datetime
+
+
+class BookDetailModel(Book):
+    reviews: List[ReviewModel]
+    tags:List[TagModel]
+
+
+class BookCreateModel(BaseModel):
+    title: str
+    author: str
+    publisher: str
+    published_date: str
+    page_count: int
+    language: str
+
+
+class BookUpdateModel(BaseModel):
+    title: str
+    author: str
+    publisher: str
+    page_count: int
+    language: str

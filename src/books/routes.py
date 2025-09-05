@@ -1,57 +1,100 @@
-from fastapi import APIRouter , status, HTTPException , Depends
-from src.books.models import Book  # ← Fixed: Import Book from models, not schemas
-from src.books.schemas import BookCreateModel, BookUpdateModel
-from .service import BookService
-from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
-import uuid
-from src.auth.dependencies import AccessTokenBearer , RoleChecker
 
+from fastapi import APIRouter, Depends, status
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-role_checker = Depends(RoleChecker(['admin' , 'user'])) # This allows only admin users to access certain endpoints
+from src.auth.dependencies import AccessTokenBearer, RoleChecker
+from src.books.service import BookService
+from src.db.main import get_session
 
-book_service = BookService()
+from .schemas import Book, BookCreateModel, BookDetailModel, BookUpdateModel
+from src.errors import BookNotFound
 
 book_router = APIRouter()
-access_token_bearer = AccessTokenBearer()
+book_service = BookService()
+acccess_token_bearer = AccessTokenBearer()
+role_checker = Depends(RoleChecker(["admin", "user"]))
 
 
-@book_router.get('/' , response_model=list[Book] , dependencies=[role_checker])
-async def get_all_books(session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)) -> List[Book]:
-    return await book_service.get_all_books(session)
+@book_router.get("/", response_model=List[Book], dependencies=[role_checker])
+async def get_all_books(
+    session: AsyncSession = Depends(get_session),
+    _: dict = Depends(acccess_token_bearer),
+):
+    books = await book_service.get_all_books(session)
+    return books
 
 
-@book_router.post('/', response_model=Book, status_code=201 , dependencies=[role_checker])
-async def create_book(book_data: BookCreateModel, session: AsyncSession = Depends(get_session), user_details = Depends(access_token_bearer)) -> Book:
-    return await book_service.create_book(book_data, session)
+@book_router.get(
+    "/user/{user_uid}", response_model=List[Book], dependencies=[role_checker]
+)
+async def get_user_book_submissions(
+    user_uid: str,
+    session: AsyncSession = Depends(get_session),
+    _: dict = Depends(acccess_token_bearer),
+):
+    books = await book_service.get_user_books(user_uid, session)
+    return books
 
 
+@book_router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Book,
+    dependencies=[role_checker],
+)
+async def create_a_book(
+    book_data: BookCreateModel,
+    session: AsyncSession = Depends(get_session),
+    token_details: dict = Depends(acccess_token_bearer),
+) -> dict:
+    user_id = token_details.get("user")["user_uid"]
+    new_book = await book_service.create_book(book_data, user_id, session)
+    return new_book
 
-@book_router.get('/{book_uid}', response_model=Book , dependencies=[role_checker])
-async def get_book_by_id(book_uid: str, session: AsyncSession = Depends(get_session) , user_details = Depends(access_token_bearer)):
-    book = await book_service.get_book(session, book_uid)
+
+@book_router.get(
+    "/{book_uid}", response_model=BookDetailModel, dependencies=[role_checker]
+)
+async def get_book(
+    book_uid: str,
+    session: AsyncSession = Depends(get_session),
+    _: dict = Depends(acccess_token_bearer),
+) -> dict:
+    book = await book_service.get_book(book_uid, session)
+
     if book:
         return book
-    raise HTTPException(status_code=404, detail="Book not found")
-    
+    else:
+        raise BookNotFound()
 
 
-@book_router.put('/{book_uid}', response_model=Book ,  dependencies=[role_checker])
-async def update_book(book_uid: str, book_update: BookUpdateModel, session: AsyncSession = Depends(get_session) , user_details = Depends(access_token_bearer)):
-    updated_book = await book_service.update_book(book_uid, book_update, session)
-    if updated_book:
+@book_router.patch("/{book_uid}", response_model=Book, dependencies=[role_checker])
+async def update_book(
+    book_uid: str,
+    book_update_data: BookUpdateModel,
+    session: AsyncSession = Depends(get_session),
+    _: dict = Depends(acccess_token_bearer),
+) -> dict:
+    updated_book = await book_service.update_book(book_uid, book_update_data, session)
+
+    if updated_book is None:
+        raise BookNotFound()
+    else:
         return updated_book
-    raise HTTPException(status_code=404, detail="Book not found")
 
 
-@book_router.delete('/{book_uid}', status_code=200 , dependencies=[role_checker])
-async def delete_book(book_uid: str, session: AsyncSession = Depends(get_session) , user_details = Depends(access_token_bearer)):
-    deleted = await book_service.delete_book(book_uid, session)
-    if deleted:
-        return {"message": f"Book with UID {book_uid} deleted successfully"}
-    raise HTTPException(status_code=404, detail="Book not found")  
+@book_router.delete(
+    "/{book_uid}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[role_checker]
+)
+async def delete_book(
+    book_uid: str,
+    session: AsyncSession = Depends(get_session),
+    _: dict = Depends(acccess_token_bearer),
+):
+    book_to_delete = await book_service.delete_book(book_uid, session)
 
-# This router handles all book-related endpoints, including getting all books,
-# creating a new book, getting a specific book by ID, updating a book, and deleting a book.
-# It uses the BookService to interact with the database and perform the necessary operations.   
+    if book_to_delete is None:
+        raise BookNotFound()
+    else:
+        return {}

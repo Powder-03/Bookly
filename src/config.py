@@ -1,30 +1,29 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-from typing import List
+
+
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = Field(..., env="DATABASE_URL")
-    JWT_SECRET: str = Field(..., env="JWT_SECRET")
-    JWT_ALGORITHM: str = Field(..., env="JWT_ALGORITHM")
-    REDIS_HOST: str = Field(..., env="REDIS_HOST")
-    REDIS_PORT: int = Field(..., env="REDIS_PORT")
-    
+    DATABASE_URL: str
+    JWT_SECRET: str
+    JWT_ALGORITHM: str
+    REDIS_URL: str = "redis://localhost:6379/0"
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: str
+    MAIL_PORT: int
+    MAIL_SERVER: str
+    MAIL_FROM_NAME: str
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
+    USE_CREDENTIALS: bool = True
+    VALIDATE_CERTS: bool = True
+    DOMAIN: str
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    model_config = SettingsConfigDict(
-        env_file=".env",  # Specify the .env file to load environment variables from
-        extra="ignore",  # Ignore any extra fields not defined in the model
-      
-    )
 
 Config = Settings()
 
-# This config file uses Pydantic to load environment variables from a .env file.
-# The DATABASE_URL variable is required and will be loaded from the .env file.
-# You can add more settings as needed, and they will be automatically loaded from the .env file.
-# The Config class specifies the .env file to use and its encoding.
-# Make sure to create a .env file in the same directory as this config.py file with the DATABASE_URL variable defined.
-# Example .env file content:
-# DATABASE_URL=postgresql+asyncpg://bookly_admin:admin123@localhost:5432/bookly_db
-# You can also add other settings like SECRET_KEY, ALGORITHM, and ACCESS_TOKEN_EXPIRE_MINUTES as needed.
-# Example:
-# SECRET_KEY=your-secret-key-here               
+
+broker_url = Config.REDIS_URL
+result_backend = Config.REDIS_URL
+broker_connection_retry_on_startup = True
