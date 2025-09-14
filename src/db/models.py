@@ -13,7 +13,7 @@ class User(SQLModel, table=True):
     )
     username: str
     email: str
-    first_name: str
+    first_name: str                                      
     last_name: str
     role: str = Field(
         sa_column=Column(pg.VARCHAR, nullable=False, server_default="user")
