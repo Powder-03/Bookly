@@ -1,4 +1,3 @@
-```pip-requirements
 alembic
 asgiref
 asyncpg
@@ -16,4 +15,3 @@ PyJWT
 redis
 ruff
 sqlmodel
-```
