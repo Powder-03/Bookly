@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlmodel import desc, select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import select, desc
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import Book
 
@@ -12,9 +12,9 @@ class BookService:
     async def get_all_books(self, session: AsyncSession):
         statement = select(Book).order_by(desc(Book.created_at))
 
-        result = await session.exec(statement)
+        result = await session.execute(statement)
 
-        return result.all()
+        return result.scalars().all()
 
     async def get_user_books(self, user_uid: str, session: AsyncSession):
         statement = (
@@ -23,16 +23,16 @@ class BookService:
             .order_by(desc(Book.created_at))
         )
 
-        result = await session.exec(statement)
+        result = await session.execute(statement)
 
-        return result.all()
+        return result.scalars().all()
 
     async def get_book(self, book_uid: str, session: AsyncSession):
         statement = select(Book).where(Book.uid == book_uid)
 
-        result = await session.exec(statement)
+        result = await session.execute(statement)
 
-        book = result.first()
+        book = result.scalars().first()
 
         return book if book is not None else None
 

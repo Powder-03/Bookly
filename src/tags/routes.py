@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, status
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from src.auth.dependencies import RoleChecker

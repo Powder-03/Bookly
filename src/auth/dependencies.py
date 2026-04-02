@@ -3,7 +3,7 @@ from typing import Any, List
 from fastapi import Depends, Request
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.main import get_session
 from src.db.models import User

@@ -14,4 +14,4 @@ pydantic-settings
 PyJWT
 redis
 ruff
-sqlmodel
+sqlalchemy[asyncio]>=2.0
